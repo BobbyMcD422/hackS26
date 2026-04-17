@@ -9,10 +9,18 @@
     "48": "images/icon48.png",
     "128": "images/icon128.png"
   },
+  "web_accessible_resources": [
+    {
+      "resources": ["lib/luxon.min.js", "page-script.js"],
+      "matches": ["https://ssb1-reg-prod.banner.marist.edu/*"]
+    }
+  ],
   "content_scripts": [
     {
-      "matches": ["https://my.marist.edu/*"],
-      "js": ["lib/luxon.min.js", "content.js"]
+      "matches": ["https://ssb1-reg-prod.banner.marist.edu/*"],
+      "js": ["content.js"],
+      "run_at": "document_start",
+      "all_frames": true
     }
   ]
 }

@@ -1,0 +1,329 @@
+(function() {
+    'use strict';
+
+    if (window.__maristIcsPageScriptLoaded) {
+        return;
+    }
+
+    window.__maristIcsPageScriptLoaded = true;
+
+    const origOpen = XMLHttpRequest.prototype.open;
+
+    const testing = false;
+    let prevCRN = null;
+    let endOfSemester = "";
+    let startOfSemester = "";
+    const { DateTime } = luxon;
+    const now = DateTime.now();
+    let classList = [];
+
+    function createFile(content, fileName, contentType) {
+        const blob = new Blob([content], { type: contentType });
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = fileName;
+        document.body.appendChild(a);
+        a.click();
+        document.body.removeChild(a);
+        URL.revokeObjectURL(url);
+    }
+
+    function exportSchedule() {
+        if (!classList.length || !endOfSemester) {
+            window.alert("Schedule data is still loading or no exportable classes were found yet.");
+            return;
+        }
+
+        BuildICS(classList, endOfSemester);
+    }
+
+    function ensureExportButton() {
+        const existingButton = document.getElementById("marist-ics-export-button");
+        if (existingButton) {
+            return existingButton;
+        }
+
+        const button = document.createElement("button");
+        button.id = "marist-ics-export-button";
+        button.type = "button";
+        button.textContent = "Export Schedule";
+        button.style.position = "sticky";
+        button.style.top = "220px";
+        button.style.left = "400px";
+        button.style.zIndex = "2147483647";
+        button.style.padding = "10px 14px";
+        button.style.border = "none";
+        button.style.borderRadius = "8px";
+        button.style.background = "#1f5eff";
+        button.style.color = "#ffffff";
+        button.style.fontSize = "14px";
+        button.style.fontWeight = "600";
+        button.style.cursor = "pointer";
+        button.style.boxShadow = "0 8px 24px rgba(0, 0, 0, 0.18)";
+        button.addEventListener("click", exportSchedule);
+
+        const tryMountNearPrintButton = () => {
+            const printButton = document.querySelector("#lookup-registrations #print-button");
+            const printButtonParent = printButton?.parentElement;
+
+            if (!printButton || !printButtonParent) {
+                return false;
+            }
+
+            const buttonWrap = document.createElement("div");
+            buttonWrap.style.display = "inline-flex";
+            buttonWrap.style.alignItems = "center";
+            buttonWrap.style.marginLeft = "12px";
+            buttonWrap.appendChild(button);
+
+            if (!document.getElementById(button.id)) {
+                printButtonParent.insertBefore(buttonWrap, printButton.nextSibling);
+                return true;
+            }
+
+            return false;
+        };
+
+        const tryMountInControlsRow = () => {
+            const controlsRow = document.querySelector("#lookup-registrations .row-with-select");
+            if (!controlsRow) {
+                return false;
+            }
+
+            controlsRow.style.display = "flex";
+            controlsRow.style.alignItems = "center";
+            controlsRow.style.flexWrap = "wrap";
+            controlsRow.style.gap = "12px";
+
+            button.style.position = "static";
+            button.style.top = "";
+            button.style.right = "";
+            button.style.marginLeft = "auto";
+
+            if (!document.getElementById(button.id)) {
+                controlsRow.appendChild(button);
+                return true;
+            }
+
+            return false;
+        };
+
+        const tryMountFallback = () => {
+            button.style.position = "fixed";
+            button.style.top = "16px";
+            button.style.right = "16px";
+            button.style.marginLeft = "";
+
+            if (document.body && !document.getElementById(button.id)) {
+                document.body.appendChild(button);
+                return true;
+            }
+
+            return false;
+        };
+
+        const mountButton = () => {
+            return tryMountNearPrintButton() || tryMountInControlsRow() || tryMountFallback();
+        };
+
+        if (!mountButton()) {
+            const observer = new MutationObserver(() => {
+                if (mountButton()) {
+                    observer.disconnect();
+                }
+            });
+
+            observer.observe(document.documentElement, { childList: true, subtree: true });
+        }
+
+        return button;
+    }
+
+    const dayToNumber = {
+        MONDAY: 1,
+        TUESDAY: 2,
+        WEDNESDAY: 3,
+        THURSDAY: 4,
+        FRIDAY: 5,
+        SATURDAY: 6,
+        SUNDAY: 7
+    };
+
+    function firstDate(start, days, time) {
+        let finalDate = "";
+        const luxonDays = Object.entries(days)
+            .filter(([_, isActive]) => isActive)
+            .map(([day]) => dayToNumber[day]);
+
+        let minOffset = Infinity;
+
+        for (const day of luxonDays) {
+            const offset = (day - start.weekday + 7) % 7;
+            if (offset < minOffset) {
+                minOffset = offset;
+            }
+        }
+
+        finalDate = start.plus({ days: minOffset });
+
+        finalDate = finalDate.set({
+            hour: time.slice(0, 2),
+            minute: time.slice(2, 4),
+            second: 0,
+            millisecond: 0
+        });
+
+        return finalDate;
+    }
+
+    const dayMap = {
+        MONDAY: "MO",
+        TUESDAY: "TU",
+        WEDNESDAY: "WE",
+        THURSDAY: "TH",
+        FRIDAY: "FR",
+        SATURDAY: "SA",
+        SUNDAY: "SU"
+    };
+
+    function hasActiveDays(daysObj) {
+        return Object.values(daysObj).some(Boolean);
+    }
+
+    function BuildICS(classes, lastDay) {
+        let ICS_String = "BEGIN:VCALENDAR\nVERSION:2.0\nPRODID:-//BobbyMcD422//Banner Schedule Export//EN\n";
+        classes.forEach((c) => {
+            ICS_String += "BEGIN:VEVENT\n";
+            for (const [key, value] of Object.entries(c)) {
+                if (key !== "DAYS") {
+                    ICS_String += `${key}:${value}\n`;
+                } else {
+                    const byDays = Object.entries(value)
+                        .filter(([_, isActive]) => isActive)
+                        .map(([day]) => dayMap[day])
+                        .join(",");
+
+                    ICS_String += `RRULE:FREQ=WEEKLY;BYDAY=${byDays};UNTIL=${lastDay}\n`;
+                }
+            }
+            ICS_String += "END:VEVENT\n";
+        });
+
+        ICS_String += "END:VCALENDAR\n";
+
+        return createFile(ICS_String, 'event.ics', 'text/calendar;charset=utf-8');
+    }
+
+    async function getFacultyMeetingTimes(term, courseReferenceNumber) {
+        try {
+            const url = `https://ssb1-reg-prod.banner.marist.edu/StudentRegistrationSsb/ssb/searchResults/getFacultyMeetingTimes?term=${encodeURIComponent(term)}&courseReferenceNumber=${encodeURIComponent(courseReferenceNumber)}`;
+
+            const response = await fetch(url, {
+                method: "GET",
+                credentials: "include",
+                headers: {
+                    "Accept": "application/json, text/javascript, */*; q=0.01"
+                }
+            });
+
+            if (!response.ok) {
+                throw new Error(`HTTP ${response.status}`);
+            }
+
+            return await response.json();
+        } catch (err) {
+            console.error("Request failed:", err);
+            return null;
+        }
+    }
+
+    ensureExportButton();
+
+    XMLHttpRequest.prototype.open = function(method, url) {
+        if (typeof url === "string" && url.includes("getRegistrationEvents")) {
+            this.addEventListener("load", async function() {
+                try {
+                    const courses = JSON.parse(this.responseText);
+                    const uniqueCourses = [...new Map(
+                        courses.map((c) => [c.crn, c])
+                    ).values()];
+
+                    classList = [];
+                    let UID = 1;
+                    let start = null;
+                    prevCRN = null;
+
+                    for (const course of uniqueCourses) {
+                        const fullData = await getFacultyMeetingTimes(course.term, course.crn);
+                        if (!fullData || !Array.isArray(fullData.fmt)) {
+                            continue;
+                        }
+
+                        for (const entry of fullData.fmt) {
+                            const data = entry.meetingTime;
+                            const daysArray = {
+                                SATURDAY: data.saturday,
+                                MONDAY: data.monday,
+                                TUESDAY: data.tuesday,
+                                WEDNESDAY: data.wednesday,
+                                THURSDAY: data.thursday,
+                                FRIDAY: data.friday,
+                                SUNDAY: data.sunday
+                            };
+
+                            if (!data.beginTime || !data.endTime || !hasActiveDays(daysArray)) {
+                                if (testing) {
+                                    console.log("Skipping unscheduled/online section:", course.crn, data);
+                                }
+                                continue;
+                            }
+
+                            if (prevCRN == null) {
+                                const cutoff = DateTime.fromFormat(data.endDate, "MM/dd/yyyy");
+                                start = DateTime.fromFormat(data.startDate, "MM/dd/yyyy");
+                                startOfSemester = start.toFormat("yyyyMMdd'T'HHmmss");
+                                endOfSemester = cutoff.toFormat("yyyyMMdd'T'HHmmss");
+                            }
+
+                            const newStart = firstDate(start, daysArray, data.beginTime);
+                            const newEnd = firstDate(start, daysArray, data.endTime);
+                            const newClass = {
+                                SUMMARY: `${course.title} ${course.subject}${course.courseNumber}`,
+                                UID: `${course.subject}${course.courseNumber}${UID}`,
+                                DTSTAMP: now.toFormat("yyyyMMdd'T'HHmmss"),
+                                DTSTART: newStart.toFormat("yyyyMMdd'T'HHmmss"),
+                                DTEND: newEnd.toFormat("yyyyMMdd'T'HHmmss"),
+                                DESCRIPTION: `Building: ${data.buildingDescription}`,
+                                LOCATION: `${data.building}${data.room}`,
+                                DAYS: daysArray,
+                            };
+
+                            classList.push(newClass);
+
+                            if (testing) {
+                                console.log("Course Meet Data");
+                                console.log("Course Received:");
+                                console.log(course);
+                                console.log("Course Stripped Down / Converted");
+                                console.log(endOfSemester);
+                                console.log(data);
+                                console.log(startOfSemester);
+                                console.log(data.beginTime);
+                                console.log(fullData);
+                                console.log(classList[UID - 1]);
+                            }
+
+                            UID++;
+                            prevCRN = course.crn;
+                        }
+                    }
+                } catch (e) {
+                    console.error("Failed to parse schedule JSON", e);
+                }
+            });
+        }
+
+        return origOpen.apply(this, arguments);
+    };
+})();
