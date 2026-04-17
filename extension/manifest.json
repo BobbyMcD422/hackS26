@@ -1,0 +1,10 @@
+{
+  "manifest_version": 3,
+  "name": "MyMarist ICS Generator",
+  "version": "1.0.0",
+  "description": "Turns Your Registration Info Into An ICS File, Downloadable To Any iCal Platform!",
+  "icons": {
+    "48": "images/icon-48.png",
+    "128": "images/icon-128.png"
+  }
+}
