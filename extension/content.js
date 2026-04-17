@@ -1,12 +1,4 @@
-// @name         MyMarist Calendar
-// @namespace    Special Script
-// @version      2026-03-20
-// @description  Convert MyMarist Registration Calendar to iCal
-// @author       Bobby/Robert McDonald
-// @match        https://*.edu/*
-// @icon         https://www.citypng.com/public/uploads/preview/hd-vector-calendar-icon-transparent-background-701751695033013y1f6o6ukoh.png
 // @grant        GM_registerMenuCommand
-// @require https://cdn.jsdelivr.net/npm/luxon@3/build/global/luxon.min.js
 
 
 (async function() {
