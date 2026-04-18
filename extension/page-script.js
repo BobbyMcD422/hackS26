@@ -12,7 +12,7 @@
     const testing = false;
     let prevCRN = null;
     let endOfSemester = "";
-    let startOfSemester = "";
+    let currentTermFileName = "schedule.ics";
     const { DateTime } = luxon;
     const now = DateTime.now();
     let classList = [];
@@ -35,7 +35,29 @@
             return;
         }
 
-        BuildICS(classList, endOfSemester);
+        BuildICS(classList, endOfSemester, currentTermFileName);
+    }
+
+    function getTermFileNameFromCode(termCode) {
+        const termText = String(termCode || "").trim();
+        const match = termText.match(/^(\d{4})(\d{2})/);
+
+        if (!match) {
+            return "schedule.ics";
+        }
+
+        const [, year, suffix] = match;
+        const seasonMap = {
+            "20": "spring",
+            "40": "fall"
+        };
+        const season = seasonMap[suffix];
+
+        if (!season) {
+            return `${year}${suffix}.ics`;
+        }
+
+        return `${season}${year}.ics`;
     }
 
     function ensureExportButton() {
@@ -63,6 +85,13 @@
         button.style.boxShadow = "0 8px 24px rgba(0, 0, 0, 0.18)";
         button.addEventListener("click", exportSchedule);
 
+        const resetButtonPosition = () => {
+            button.style.position = "static";
+            button.style.top = "";
+            button.style.right = "";
+            button.style.marginLeft = "";
+        };
+
         const tryMountNearPrintButton = () => {
             const printButton = document.querySelector("#lookup-registrations #print-button");
             const printButtonParent = printButton?.parentElement;
@@ -70,6 +99,8 @@
             if (!printButton || !printButtonParent) {
                 return false;
             }
+
+            resetButtonPosition();
 
             const buttonWrap = document.createElement("div");
             buttonWrap.style.display = "inline-flex";
@@ -96,9 +127,7 @@
             controlsRow.style.flexWrap = "wrap";
             controlsRow.style.gap = "12px";
 
-            button.style.position = "static";
-            button.style.top = "";
-            button.style.right = "";
+            resetButtonPosition();
             button.style.marginLeft = "auto";
 
             if (!document.getElementById(button.id)) {
@@ -127,15 +156,28 @@
             return tryMountNearPrintButton() || tryMountInControlsRow() || tryMountFallback();
         };
 
-        if (!mountButton()) {
+        const mountButtonWhenReady = () => {
+            if (mountButton()) {
+                return;
+            }
+
             const observer = new MutationObserver(() => {
-                if (mountButton()) {
+                if (tryMountNearPrintButton() || tryMountInControlsRow()) {
                     observer.disconnect();
                 }
             });
 
             observer.observe(document.documentElement, { childList: true, subtree: true });
-        }
+
+            window.setTimeout(() => {
+                observer.disconnect();
+                if (!document.getElementById(button.id)) {
+                    tryMountFallback();
+                }
+            }, 8000);
+        };
+
+        mountButtonWhenReady();
 
         return button;
     }
@@ -191,7 +233,7 @@
         return Object.values(daysObj).some(Boolean);
     }
 
-    function BuildICS(classes, lastDay) {
+    function BuildICS(classes, lastDay, fileName) {
         let ICS_String = "BEGIN:VCALENDAR\nVERSION:2.0\nPRODID:-//BobbyMcD422//Banner Schedule Export//EN\n";
         classes.forEach((c) => {
             ICS_String += "BEGIN:VEVENT\n";
@@ -212,7 +254,7 @@
 
         ICS_String += "END:VCALENDAR\n";
 
-        return createFile(ICS_String, 'event.ics', 'text/calendar;charset=utf-8');
+        return createFile(ICS_String, fileName, 'text/calendar;charset=utf-8');
     }
 
     async function getFacultyMeetingTimes(term, courseReferenceNumber) {
@@ -238,7 +280,9 @@
         }
     }
 
-    ensureExportButton();
+    window.setTimeout(() => {
+        ensureExportButton();
+    }, 500);
 
     XMLHttpRequest.prototype.open = function(method, url) {
         if (typeof url === "string" && url.includes("getRegistrationEvents")) {
@@ -250,6 +294,7 @@
                     ).values()];
 
                     classList = [];
+                    currentTermFileName = getTermFileNameFromCode(uniqueCourses[0]?.term);
                     let UID = 1;
                     let start = null;
                     prevCRN = null;
@@ -282,7 +327,6 @@
                             if (prevCRN == null) {
                                 const cutoff = DateTime.fromFormat(data.endDate, "MM/dd/yyyy");
                                 start = DateTime.fromFormat(data.startDate, "MM/dd/yyyy");
-                                startOfSemester = start.toFormat("yyyyMMdd'T'HHmmss");
                                 endOfSemester = cutoff.toFormat("yyyyMMdd'T'HHmmss");
                             }
 
@@ -308,7 +352,6 @@
                                 console.log("Course Stripped Down / Converted");
                                 console.log(endOfSemester);
                                 console.log(data);
-                                console.log(startOfSemester);
                                 console.log(data.beginTime);
                                 console.log(fullData);
                                 console.log(classList[UID - 1]);

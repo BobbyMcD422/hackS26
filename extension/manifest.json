@@ -17,7 +17,7 @@
   ],
   "content_scripts": [
     {
-      "matches": ["https://ssb1-reg-prod.banner.marist.edu/*"],
+      "matches": ["https://ssb1-reg-prod.banner.marist.edu/StudentRegistrationSsb/ssb/registrationHistory/registrationHistory"],
       "js": ["content.js"],
       "run_at": "document_start",
       "all_frames": true
