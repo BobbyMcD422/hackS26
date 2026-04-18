@@ -10,11 +10,10 @@
     const origOpen = XMLHttpRequest.prototype.open;
 
     const testing = false;
-    let prevCRN = null;
     let endOfSemester = "";
     let currentTermFileName = "schedule.ics";
     const { DateTime } = luxon;
-    const now = DateTime.now();
+    const now = DateTime.now().toUTC();
     let classList = [];
 
     function createFile(content, fileName, contentType) {
@@ -233,26 +232,55 @@
         return Object.values(daysObj).some(Boolean);
     }
 
+    function escapeICSText(value) {
+        return String(value ?? "")
+            .replace(/\\/g, "\\\\")
+            .replace(/\r?\n/g, "\\n")
+            .replace(/,/g, "\\,")
+            .replace(/;/g, "\\;");
+    }
+
+    function buildLocation(building, room) {
+        const parts = [building, room].filter((part) => part && part !== "null");
+        return parts.join(" ").trim();
+    }
+
+    function buildDescription(buildingDescription) {
+        if (!buildingDescription || buildingDescription === "null") {
+            return "Building: TBA";
+        }
+
+        return `Building: ${buildingDescription}`;
+    }
+
     function BuildICS(classes, lastDay, fileName) {
-        let ICS_String = "BEGIN:VCALENDAR\nVERSION:2.0\nPRODID:-//BobbyMcD422//Banner Schedule Export//EN\n";
+        const lineBreak = "\r\n";
+        let ICS_String = [
+            "BEGIN:VCALENDAR",
+            "VERSION:2.0",
+            "PRODID:-//BobbyMcD422//Banner Schedule Export//EN",
+            "CALSCALE:GREGORIAN",
+            "METHOD:PUBLISH"
+        ].join(lineBreak) + lineBreak;
+
         classes.forEach((c) => {
-            ICS_String += "BEGIN:VEVENT\n";
+            ICS_String += `BEGIN:VEVENT${lineBreak}`;
             for (const [key, value] of Object.entries(c)) {
                 if (key !== "DAYS") {
-                    ICS_String += `${key}:${value}\n`;
+                    ICS_String += `${key}:${escapeICSText(value)}${lineBreak}`;
                 } else {
                     const byDays = Object.entries(value)
                         .filter(([_, isActive]) => isActive)
                         .map(([day]) => dayMap[day])
                         .join(",");
 
-                    ICS_String += `RRULE:FREQ=WEEKLY;BYDAY=${byDays};UNTIL=${lastDay}\n`;
+                    ICS_String += `RRULE:FREQ=WEEKLY;BYDAY=${byDays};UNTIL=${lastDay}${lineBreak}`;
                 }
             }
-            ICS_String += "END:VEVENT\n";
+            ICS_String += `END:VEVENT${lineBreak}`;
         });
 
-        ICS_String += "END:VCALENDAR\n";
+        ICS_String += `END:VCALENDAR${lineBreak}`;
 
         return createFile(ICS_String, fileName, 'text/calendar;charset=utf-8');
     }
@@ -297,7 +325,7 @@
                     currentTermFileName = getTermFileNameFromCode(uniqueCourses[0]?.term);
                     let UID = 1;
                     let start = null;
-                    prevCRN = null;
+                    let isFirstMeeting = true;
 
                     for (const course of uniqueCourses) {
                         const fullData = await getFacultyMeetingTimes(course.term, course.crn);
@@ -324,22 +352,23 @@
                                 continue;
                             }
 
-                            if (prevCRN == null) {
+                            if (isFirstMeeting) {
                                 const cutoff = DateTime.fromFormat(data.endDate, "MM/dd/yyyy");
                                 start = DateTime.fromFormat(data.startDate, "MM/dd/yyyy");
-                                endOfSemester = cutoff.toFormat("yyyyMMdd'T'HHmmss");
+                                endOfSemester = cutoff.endOf("day").toFormat("yyyyMMdd'T'HHmmss");
+                                isFirstMeeting = false;
                             }
 
                             const newStart = firstDate(start, daysArray, data.beginTime);
                             const newEnd = firstDate(start, daysArray, data.endTime);
                             const newClass = {
                                 SUMMARY: `${course.title} ${course.subject}${course.courseNumber}`,
-                                UID: `${course.subject}${course.courseNumber}${UID}`,
-                                DTSTAMP: now.toFormat("yyyyMMdd'T'HHmmss"),
+                                UID: `${course.subject}${course.courseNumber}${UID}@mymarist-ics-generator`,
+                                DTSTAMP: now.toFormat("yyyyMMdd'T'HHmmss'Z'"),
                                 DTSTART: newStart.toFormat("yyyyMMdd'T'HHmmss"),
                                 DTEND: newEnd.toFormat("yyyyMMdd'T'HHmmss"),
-                                DESCRIPTION: `Building: ${data.buildingDescription}`,
-                                LOCATION: `${data.building}${data.room}`,
+                                DESCRIPTION: buildDescription(data.buildingDescription),
+                                LOCATION: buildLocation(data.building, data.room),
                                 DAYS: daysArray,
                             };
 
@@ -358,7 +387,6 @@
                             }
 
                             UID++;
-                            prevCRN = course.crn;
                         }
                     }
                 } catch (e) {
