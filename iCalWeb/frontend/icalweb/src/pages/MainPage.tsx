@@ -3,6 +3,7 @@ import type { ChangeEvent } from "react";
 import { GraduationCap, MapPin, Trash2, Upload, X } from "lucide-react";
 import ThemeToggle from "@/components/ThemeToggle";
 import CalendarView from "@/components/CalendarView";
+import { buildShareableIcsUrl, uploadIcsFile } from "@/lib/api";
 import { parseIcsToCalendarEvents, type CalendarEvent } from "@/lib/ics";
 
 export default function MainPage() {
@@ -11,6 +12,8 @@ export default function MainPage() {
   const [error, setError] = useState<string | null>(null);
   const [isImporting, setIsImporting] = useState(false);
   const [importedFileName, setImportedFileName] = useState<string | null>(null);
+  const [shareableIcsUrl, setShareableIcsUrl] = useState<string | null>(null);
+  const [copyState, setCopyState] = useState<"idle" | "copied" | "failed">("idle");
   const [hasImported, setHasImported] = useState(false);
   const [selectedEvent, setSelectedEvent] = useState<CalendarEvent | null>(null);
   const remainingClasses = getRemainingClassesSummary(events);
@@ -27,12 +30,15 @@ export default function MainPage() {
     setWarnings([]);
 
     try {
+      const uploadedFile = await uploadIcsFile(file);
       const icsText = await file.text();
       const result = parseIcsToCalendarEvents(icsText);
 
       setEvents(result.events);
       setWarnings(result.warnings);
       setImportedFileName(file.name);
+      setShareableIcsUrl(buildShareableIcsUrl(uploadedFile.url));
+      setCopyState("idle");
       setHasImported(true);
       setSelectedEvent(null);
     } catch (caughtError) {
@@ -44,6 +50,19 @@ export default function MainPage() {
     } finally {
       setIsImporting(false);
       event.target.value = "";
+    }
+  }
+
+  async function handleCopyIcsLink() {
+    if (!shareableIcsUrl) {
+      return;
+    }
+
+    try {
+      await navigator.clipboard.writeText(shareableIcsUrl);
+      setCopyState("copied");
+    } catch {
+      setCopyState("failed");
     }
   }
 
@@ -97,10 +116,25 @@ export default function MainPage() {
 
               <div className="text-sm text-zinc-600 dark:text-zinc-300">
                 {importedFileName ? (
-                  <span>
-                    Loaded <span className="font-medium">{importedFileName}</span> with{" "}
-                    <span className="font-medium">{events.length}</span> events.
-                  </span>
+                  <div className="flex flex-col items-start gap-1 text-left sm:items-end">
+                    <span>
+                      Loaded <span className="font-medium">{importedFileName}</span> with{" "}
+                      <span className="font-medium">{events.length}</span> events.
+                    </span>
+                    {shareableIcsUrl ? (
+                      <button
+                        type="button"
+                        onClick={handleCopyIcsLink}
+                        className="text-sky-700 underline decoration-sky-400 underline-offset-2 dark:text-sky-300"
+                      >
+                        {copyState === "copied"
+                          ? "Copied ICS link"
+                          : copyState === "failed"
+                            ? "Copy failed"
+                            : "Copy ICS link"}
+                      </button>
+                    ) : null}
+                  </div>
                 ) : (
                   <span>No file imported yet.</span>
                 )}

@@ -2,11 +2,11 @@ FROM node:22-bookworm-slim
 
 WORKDIR /app
 
-COPY frontend/icalweb/package*.json ./
+COPY package*.json ./
 
 RUN npm ci
 
-COPY frontend/icalweb ./
+COPY . .
 
 EXPOSE 5173
 
