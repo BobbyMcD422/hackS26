@@ -1,0 +1,4 @@
+frontend/icalweb/node_modules
+frontend/icalweb/dist
+frontend/icalweb/.vite
+backend
